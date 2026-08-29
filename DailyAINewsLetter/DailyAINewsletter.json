@@ -1,0 +1,434 @@
+{
+  "name": "DailyAINewsletter",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 10
+            }
+          ]
+        },
+        "misfirePolicy": "coalesce_owner"
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        -16,
+        96
+      ],
+      "id": "f280124a-af8c-4023-93ad-b091ff19dfc0",
+      "name": "DailyRun@10PM",
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "fileSelector": "/data/DailyAINews/config.json",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        208,
+        96
+      ],
+      "id": "a0a5c358-1d0f-41fa-b35d-e1d949177ee5",
+      "name": "ReadConfigFile",
+      "alwaysOutputData": false,
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "operation": "fromJson",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        432,
+        96
+      ],
+      "id": "f0eda1c6-70f6-4cf7-8e48-7f4d79b4ef53",
+      "name": "ExtractConfigFile"
+    },
+    {
+      "parameters": {
+        "url": "https://news.google.com/rss/search?q=Artificial+Intelligence",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [
+        656,
+        96
+      ],
+      "id": "d844e8e4-74a1-4c59-a288-d0d645b8856a",
+      "name": "GetNewsArticles"
+    },
+    {
+      "parameters": {
+        "maxItems": "={{ $('ExtractConfigFile').item.json.data.settings.article_count }}"
+      },
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        880,
+        96
+      ],
+      "id": "fb23d5d7-f5cd-4d8e-88ce-ad003e55fcac",
+      "name": "SetLimit"
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        1104,
+        96
+      ],
+      "id": "27d1cb6a-22d9-40ee-950a-ce5fe3f7beaa",
+      "name": "AggregateAllItems"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are an AI News Editor.\nRead the following AI news articles and select the TOP {{ $('ExtractConfigFile').item.json.data.settings.article_count }} most important news.\n\nIMPORTANT: Return ONLY a valid JSON object with exactly two fields. Do not wrap it in markdown code blocks.\n1. \"email_html\": The news formatted in standard HTML (using <h1>, <h2>, <p>, <strong>).\n2. \"whatsapp_text\": The exact same news formatted strictly for WhatsApp (no HTML, use single asterisks for *bold*).\n\nNews Data:\t\n{{ JSON.stringify($json.data) }}",
+        "messages": {
+          "messageValues": []
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        1328,
+        96
+      ],
+      "id": "3e82e150-629c-4298-9744-ad2c3fb7f28b",
+      "name": "Basic LLM Chain"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.5-flash-lite",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        1408,
+        336
+      ],
+      "id": "d342de39-c2c0-49ac-ade2-b9d60b05bb4e",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "YourGeminiInstanceID",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "let rawText = $json.text; \nlet cleanText = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();\nreturn JSON.parse(cleanText);"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1680,
+        96
+      ],
+      "id": "4f5d58d9-8a18-44e2-9636-161a632327c2",
+      "name": "ParseAIOutput_Json"
+    },
+    {
+      "parameters": {
+        "jsCode": "const subscribers = $('ExtractConfigFile').first().json.data.subscribers;\n\nlet contacts = [];\nfor (let sub of subscribers) {\n  contacts.push({\n    json: {\n      Email: sub.email || null, // Fallback if a user only has WhatsApp\n      WhatsApp: sub.whatsapp || null\n    }\n  });\n}\nreturn contacts;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1904,
+        96
+      ],
+      "id": "856beee5-485e-48f1-9886-d5624efff124",
+      "name": "DistributeList"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:3000/api/sendText",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Api-Key",
+              "value": "YourSecretKey"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"session\": \"YourSessionID\",\n  \"chatId\": \"{{ $json.WhatsApp }}\",\n  \"text\": {{ JSON.stringify($('ParseAIOutput_Json').first().json.whatsapp_text) }}\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        2352,
+        0
+      ],
+      "id": "6c39d27f-d311-4911-acea-0c5393878fe4",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "fromEmail": "abhinaykumar15@gmail.com",
+        "toEmail": "={{ $json.Email }}",
+        "subject": "=Today AI News | {{$now.toFormat(\"dd MMM yyyy\")}}",
+        "html": "={{ $('ParseAIOutput_Json').item.json.whatsapp_text }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        2352,
+        192
+      ],
+      "id": "42bbdcf0-9625-4884-99ff-f5c0fa8630bb",
+      "name": "Send an Email",
+      "webhookId": "da38e403-09d3-47e7-b2c4-4a0a70998f0b",
+      "credentials": {
+        "smtp": {
+          "id": "YourGmailInstanceID",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "2516820b-1a29-4587-afb4-137538562dc6",
+              "leftValue": "={{ $json.Email }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        2128,
+        192
+      ],
+      "id": "23b801bf-384c-48eb-99ec-1c4b1a4e591f",
+      "name": "EmailFilter"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "7fc62212-d299-4f5e-9fe0-677147fc8168",
+              "leftValue": "={{ $json.WhatsApp }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        2128,
+        0
+      ],
+      "id": "2eddb353-d185-499e-89fb-8c089f9b30e6",
+      "name": "WhatsappFilter"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "DailyRun@10PM": {
+      "main": [
+        [
+          {
+            "node": "ReadConfigFile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ReadConfigFile": {
+      "main": [
+        [
+          {
+            "node": "ExtractConfigFile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ExtractConfigFile": {
+      "main": [
+        [
+          {
+            "node": "GetNewsArticles",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GetNewsArticles": {
+      "main": [
+        [
+          {
+            "node": "SetLimit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SetLimit": {
+      "main": [
+        [
+          {
+            "node": "AggregateAllItems",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AggregateAllItems": {
+      "main": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Basic LLM Chain": {
+      "main": [
+        [
+          {
+            "node": "ParseAIOutput_Json",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ParseAIOutput_Json": {
+      "main": [
+        [
+          {
+            "node": "DistributeList",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DistributeList": {
+      "main": [
+        [
+          {
+            "node": "EmailFilter",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "WhatsappFilter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "EmailFilter": {
+      "main": [
+        [
+          {
+            "node": "Send an Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WhatsappFilter": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "916b6d09-add5-4986-ac96-08246f2c50b7",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "3b18695fcd6149970cc5de83a491b540847c1f57327a4b26b957f20d8b3b8878"
+  },
+  "nodeGroups": [],
+  "id": "geaIqua9yJTzZd9X",
+  "tags": []
+}
