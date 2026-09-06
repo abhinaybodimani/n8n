@@ -1,0 +1,302 @@
+{
+  "name": "WhatsAppWisher",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 8
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        16
+      ],
+      "id": "f4f9cfef-5295-4edf-bcdb-a03af4e57e15",
+      "name": "Daily9AMTrigger"
+    },
+    {
+      "parameters": {
+        "operation": "fromJson",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        448,
+        16
+      ],
+      "id": "3db5da15-fe8c-4be9-bac4-73cbf8397480",
+      "name": "ExtractConfigFile"
+    },
+    {
+      "parameters": {
+        "fileSelector": "=/data/WhatsAppWisher/{{ $json.data.FileToRead }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        672,
+        16
+      ],
+      "id": "59a8f20b-7154-494d-8826-f52a59095544",
+      "name": "ReadContactsFile"
+    },
+    {
+      "parameters": {
+        "fileSelector": "/data/WhatsAppWisher/config.json",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        224,
+        16
+      ],
+      "id": "f43e2db5-8f72-4fc7-b591-ddcb1e42ad0b",
+      "name": "GetContacts"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        896,
+        16
+      ],
+      "id": "92750000-ce2b-460b-99d2-db32763bf10d",
+      "name": "ExtractContacts"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. Get today's date and format it to \"DD-MMM\"\nconst today = new Date();\nconst monthNames = [\"Jan\", \"Feb\", \"Mar\", \"Apr\", \"May\", \"Jun\", \"Jul\", \"Aug\", \"Sep\", \"Oct\", \"Nov\", \"Dec\"];\nconst currentDay = String(today.getDate()).padStart(2, '0');\nconst currentMonth = monthNames[today.getMonth()];\nconst todayString = `${currentDay}-${currentMonth}`; \n\nconst eventsToday = [];\n\n// 2. Loop through all contacts\nfor (const item of $input.all()) {\n    const contact = item.json;\n    \n    // 3. Check for Birthdays\n    if (contact.Birthday === todayString) {\n        // We copy the contact data and append the GreetingType\n        eventsToday.push({ \n            json: { ...contact, GreetingType: \"Birthday\" } \n        });\n    }\n    \n    // 4. Check for Anniversaries\n    if (contact.Anniversary === todayString) {\n        eventsToday.push({ \n            json: { ...contact, GreetingType: \"Anniversary\" } \n        });\n    }\n}\n\n// 5. Return a standard flat array of objects for n8n's single output\nreturn eventsToday;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        16
+      ],
+      "id": "25aca925-901f-4325-85f9-c3d9fdb243a7",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1344,
+        16
+      ],
+      "id": "152540e3-2e71-4c05-85e5-aba6ece32882",
+      "name": "LoopOverTodaysEvents"
+    },
+    {
+      "parameters": {
+        "model": "qwen2.5:3b",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmOllama",
+      "typeVersion": 1,
+      "position": [
+        1648,
+        128
+      ],
+      "id": "3bcb45c2-b8af-46c8-9064-6e43a992ba75",
+      "name": "Ollama Model",
+      "credentials": {
+        "ollamaApi": {
+          "id": "L233zqcrVsPy7AQZ",
+          "name": "LocalOllama"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Write a short, warm, and personal WhatsApp {{ $json.GreetingType }} message for my {{ $json.Relation }}, {{ $json.Name }}. \nI call them {{ $json.NickName }}. \nKeep it natural, personal, and use a couple of suitable emojis. Return only the final message with no placeholders, quotation marks, or introductory text.",
+        "messages": {
+          "messageValues": []
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        1568,
+        -112
+      ],
+      "id": "eafcadb3-ce6a-4d1d-80cf-099d1c5f2b98",
+      "name": "GetCustomGreeting"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:3000/api/sendText",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Api-Key",
+              "value": "MySecretKey123"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"session\": \"Abhinay-66111\",\n  \"chatId\": \"919573766111@c.us\",\n  \"text\": \"{{ $json.text }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1920,
+        16
+      ],
+      "id": "4828585a-9e66-4e23-9b0b-7449f5093d0d",
+      "name": "SendWhatsAppMessage",
+      "notes": "={\n  \"session\": \"Abhinay-66111\",\n  \"chatId\": \"{{ $('LoopOverTodaysEvents').item.json.Code.substring(1) }}{{ $('LoopOverTodaysEvents').item.json.PhoneNumber }}@c.us\",\n  \"text\": {{ $json.text }}\n}"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Daily9AMTrigger": {
+      "main": [
+        [
+          {
+            "node": "GetContacts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ExtractConfigFile": {
+      "main": [
+        [
+          {
+            "node": "ReadContactsFile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GetContacts": {
+      "main": [
+        [
+          {
+            "node": "ExtractConfigFile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ReadContactsFile": {
+      "main": [
+        [
+          {
+            "node": "ExtractContacts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ExtractContacts": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "LoopOverTodaysEvents",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LoopOverTodaysEvents": {
+      "main": [
+        [],
+        [
+          {
+            "node": "GetCustomGreeting",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "GetCustomGreeting",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GetCustomGreeting": {
+      "main": [
+        [
+          {
+            "node": "SendWhatsAppMessage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SendWhatsAppMessage": {
+      "main": [
+        [
+          {
+            "node": "LoopOverTodaysEvents",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "timezone": "Europe/Copenhagen",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "9af1f627-4eb3-48ec-9fa2-cab0a82ce4ee",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "3b18695fcd6149970cc5de83a491b540847c1f57327a4b26b957f20d8b3b8878"
+  },
+  "nodeGroups": [],
+  "id": "SdpIcAWZn8a2NSqn",
+  "tags": []
+}
