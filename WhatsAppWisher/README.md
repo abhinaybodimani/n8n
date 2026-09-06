@@ -22,7 +22,7 @@ WhatsappWishAgent/
   {
     "Name": "Sadhana",
     "Code": "+91",
-    "PhoneNumber": "9573741867",
+    "PhoneNumber": "95737123456",
     "Relation": "Spouse",
     "NickName": "Sadhana",
     "Birthday": "25-Jun",
@@ -32,7 +32,7 @@ WhatsappWishAgent/
   {
     "Name": "Atharva",
     "Code": "+45",
-    "PhoneNumber": "91729969",
+    "PhoneNumber": "91721234",
     "Relation": "Son",
     "NickName": "Kannaya",
     "Birthday": "05-Sep",
