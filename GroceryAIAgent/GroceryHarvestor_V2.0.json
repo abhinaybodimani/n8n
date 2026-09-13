@@ -1,0 +1,893 @@
+{
+  "name": "GroceryHarvestor_V2.0",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 22
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        144
+      ],
+      "id": "53544879-0741-4a3c-8262-bee82532cede",
+      "name": "GroceryTrigger"
+    },
+    {
+      "parameters": {
+        "operation": "fromJson",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        448,
+        144
+      ],
+      "id": "00dc03eb-401d-4de1-b772-43f07ea5bff0",
+      "name": "ExtractStores"
+    },
+    {
+      "parameters": {
+        "fileSelector": "/data/DanishGroceryAIAgent/stores.json",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        224,
+        144
+      ],
+      "id": "a66ab90a-ef93-4e46-8692-b3a73f7e1de3",
+      "name": "ReadStores"
+    },
+    {
+      "parameters": {
+        "url": "={{ $('ExtractStores').item.json.data.URL }}{{ $json.store }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1120,
+        144
+      ],
+      "id": "1e4c24f0-6dc7-448c-a814-b8569894d3a4",
+      "name": "FetchPublicationID"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. Get raw HTML from the previous HTTP Request node\nconst html = $input.first().json.data; \n\n// 2. Extract all hidden <app-data> blocks\nconst regex = /<app-data[^>]*>(.*?)<\\/app-data>/g;\nconst matches = [...html.matchAll(regex)];\n\nlet selectedPublication = null;\nconst now = new Date();\n\nfor (const match of matches) {\n  try {\n    // Convert HTML entity quotes (&quot;) back to standard quotes (\")\n    const cleanJson = match[1].replace(/&quot;/g, '\"');\n    const data = JSON.parse(cleanJson);\n\n    // Locate the block containing the publications array\n    if (Array.isArray(data) && data[0] && Array.isArray(data[0].publications)) {\n      const publications = data[0].publications;\n\n      // Filter for flyers that are currently active right now\n      const activePublications = publications.filter(p => {\n        const from = new Date(p.validFrom);\n        const until = new Date(p.validUntil);\n        return from <= now && until >= now;\n      });\n\n      if (activePublications.length > 0) {\n        // Prioritize the weekly flyer (typically labeled 'Uge X')\n        const weeklyGroceryFlyer = activePublications.find(p => \n          p.label && p.label.toLowerCase().includes('uge')\n        );\n\n        // Fall back to the first active circular if 'Uge' isn't explicitly in the title\n        selectedPublication = weeklyGroceryFlyer || activePublications[0];\n        break; \n      }\n    }\n  } catch (e) {\n    // Skip blocks that fail JSON parsing\n  }\n}\n\nif (!selectedPublication) {\n  throw new Error(\"No active weekly grocery flyer found for this store.\");\n}\n\n// 3. Return the publication details for downstream nodes\nreturn [{\n  json: {\n    publicationId: selectedPublication.id,\n    label: selectedPublication.label,\n    validFrom: selectedPublication.validFrom,\n    validUntil: selectedPublication.validUntil\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1344,
+        144
+      ],
+      "id": "22d02f0a-d560-4f1a-a762-6e3e0e4bbd77",
+      "name": "RetrievePublicationID"
+    },
+    {
+      "parameters": {
+        "url": "={{ $('ExtractStores').item.json.data.URL }}{{ $('ExtractStores').item.json.data.stores[0].store }}?publication={{ $('RetrievePublicationID').item.json.publicationId }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        2240,
+        144
+      ],
+      "id": "8cedb897-2f95-40be-966c-d06b8d46bb34",
+      "name": "FetchFlyers"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. Get the raw HTML from the previous HTTP Request\nconst html = $input.first().json.data; \n\n// 2. Find all hidden <app-data> blocks\nconst regex = /<app-data[^>]*>(.*?)<\\/app-data>/g;\nconst matches = [...html.matchAll(regex)];\n\nlet flyerPages = [];\n\nfor (const match of matches) {\n  try {\n    // 3. Clean the HTML formatting back to standard JSON\n    const cleanJson = match[1].replace(/&quot;/g, '\"');\n    const data = JSON.parse(cleanJson);\n\n    // 4. Look for the specific block holding the publication images\n    if (data.publication && data.publication.images) {\n      // Extract the URL and fix HTML entities (&amp; -> &)\n      flyerPages = data.publication.images.map(img => img.url.replace(/&amp;/g, '&'));\n      break; \n    }\n  } catch (e) {\n    // Ignore invalid JSON blocks\n  }\n}\n\nif (flyerPages.length === 0) {\n  throw new Error(\"Could not find image URLs in the HTML.\");\n}\n\n// 5. Output each URL as a separate item for the loop\nreturn flyerPages.map(url => ({\n  json: { \n    imageUrl: url \n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2464,
+        144
+      ],
+      "id": "b737e7ee-1c02-45a4-8375-85613ac383a9",
+      "name": "ExtractImageURLs"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a precise data extraction assistant specializing in Danish grocery flyers.\nYour task is to analyze the provided supermarket flyer page image and extract promotional grocery deals into a clean, valid JSON array.\n\nStrict Rules:\n\nAllowed Categories & Isolation:\n\nMeat: Fresh and chilled raw meats/poultry only (e.g., fresh minced beef, chicken breast, pork chops). DO NOT classify any frozen meat, frozen nuggets, or frozen processed meats here.\n\nFrozen: All frozen products (e.g., frozen chicken/nuggets, frozen pizza, frozen fries, frozen berries, frozen vegetables, frozen ready meals).\n\nMilk products: Fresh milk, cream, butter, cheese.\n\nYogurt: Skyr, yogurt, drinking yogurt.\n\nEggs: Fresh shell eggs.\n\nVegetables: Fresh vegetables, herbs, potatoes.\n\nFruits: Fresh whole and cut fruits, berries.\n\nSoda: Carbonated soft drinks, energy drinks, sparkling water.\n\nBreads: Fresh bread, buns, toast, bake-off.\n\nEdibles: Ambient pantry staples including nuts, seeds, oats, grains, lentils, beans, tofu, plant-based alternatives, and spreads.\n\nBeer: Beers and non-alcoholic beers.\n\nAlcohol: Wine, spirits, ciders.\nIgnore non-food and non-beverage items (e.g., cleaning supplies, toiletries, clothes, electronics).\n\nStrict Pricing Verification:\n\nONLY extract an item if a clear, numerical promotional price is explicitly printed on the page.\n\nNever infer prices, and never output 0.00. If an item lacks a visible promotional price, omit it completely.\n\nTranslation & Conditions:\n\nTranslate Danish item names to English in item_name_en, while preserving key brand names (e.g., Arla, Lurpak).\n\nExtract price as a single numeric value (DKK). For multi-buys (e.g., \"3 for 50\"), calculate and output the single unit price (e.g., 16.67), or specify the deal in unit (e.g., \"3 pk for 50 DKK\").\n\nExact Store Name Enforcement:\n\nIdentify the supermarket chain from the page header, logo, or flyer branding.\n\nSet \"store\" strictly to the exact chain name: Netto, REMA 1000, Lidl, or Føtex.\n\nNEVER use generic labels like \"supermarket\", \"store\", or template placeholders like \"{{ $('FlattenTheData').item.json.Store }}\".\n\nOutput format must be a raw JSON array with this exact structure, and nothing else (no markdown wrapping like ```json):\n[\n{\n\"item_name_dk\": \"Hakket oksekød 8-12%\",\n\"item_name_en\": \"Minced beef 8-12%\",\n\"category\": \"Meat\",\n\"price\": 29.00,\n\"unit\": \"400g\",\n\"store\": \"Netto\"\n},\n{\n\"item_name_dk\": \"Kyllingenuggets frost\",\n\"item_name_en\": \"Frozen chicken nuggets\",\n\"category\": \"Frozen\",\n\"price\": 20.00,\n\"unit\": \"500g\",\n\"store\": \"Netto\"\n}\n]\nCRITICAL INSTRUCTIONS:\nMixed Content: Pages often contain a mix of food and non-food items. You must scan the ENTIRE image carefully.\n\nTarget Items: Extract ANY edible food or beverage items (e.g., coffee, hummus, snacks, produce, alcohol, sodas). Completely IGNORE non-food household items (e.g., plasters, brushes, cleaning supplies).\n\nLow-Resolution Text: The image may be low resolution. Do your best to infer the product name (e.g., \"Økologisk Hummus\" or \"Coffee & Milk\") and the accompanying price based on visual context, even if slightly pixelated.\n\nIf you find food items, output them in the required JSON format. If you are 100% sure there are NO food or beverage items on the entire page, output an empty array: []\nIf no items from the target categories have visible prices on this page, return an empty array: []",
+        "messages": {
+          "messageValues": [
+            {
+              "type": "HumanMessagePromptTemplate",
+              "messageType": "imageBinary"
+            }
+          ]
+        },
+        "batching": {
+          "batchSize": 1,
+          "delayBetweenBatches": 2
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        448,
+        544
+      ],
+      "id": "283a60d4-3829-4e57-b082-684d44fbead2",
+      "name": "Basic LLM Chain",
+      "executeOnce": false,
+      "retryOnFail": true,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.imageURL }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        224,
+        544
+      ],
+      "id": "874bcca2-6b6d-4338-96c7-213b058cdeea",
+      "name": "FetchImages",
+      "executeOnce": false
+    },
+    {
+      "parameters": {
+        "amount": 8
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        800,
+        544
+      ],
+      "id": "fb909650-7d62-443d-98dd-dd8d72f5a56c",
+      "name": "Wait",
+      "webhookId": "2d375da7-8a0b-4360-9ece-750cd8bfcc4d"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. Grab all the aggregated items coming out of the Loop's 'done' branch\nconst allItems = $input.all();\nconst flattenedItems = [];\n\n// Safely get the store name without crashing if the path is undefined\nlet defaultStore = \"$('FlattenTheData').first().json.Store\"\n\nfor (const item of allItems) {\n  let rawText = item.json.text;\n\n  // Skip if there's no text output\n  if (!rawText) continue;\n\n  try {\n    // 2. Strip out the ```json and ``` wrappers so it is pure JSON data\n    let cleanedText = rawText\n      .replace(/```json/gi, '')\n      .replace(/```/g, '')\n      .trim();\n\n    // 3. Parse the clean string back into a JavaScript array\n    const parsed = JSON.parse(cleanedText);\n\n    // 4. If the array has items, push them into our master list\n    if (Array.isArray(parsed) && parsed.length > 0) {\n      flattenedItems.push(...parsed);\n    }\n  } catch (e) {\n    // Skip this specific page if the JSON is somehow malformed\n  }\n}\n\n// 5. Output each deal as its own individual item for the database\nreturn flattenedItems.map(item => ({\n  json: {\n    item_name_dk: item.item_name_dk,\n    item_name_en: item.item_name_en,\n    category: item.category,\n    price: Number(item.price),\n    unit: item.unit,\n    // Clean up empty or 'Unknown' store names generated by the AI\n    store: (item.store && item.store !== \"Unknown\" && item.store !== \"\") \n           ? item.store \n           : defaultStore,\n    extracted_at: new Date().toISOString()\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1024,
+        544
+      ],
+      "id": "7c03c39b-187b-46d8-9ebb-e0cd9f1df7ee",
+      "name": "FlattenGroceryItems"
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list",
+          "cachedResultName": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "GroceryDeals_Latest",
+          "mode": "list",
+          "cachedResultName": "GroceryDeals_Latest"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "item_name_dk": "={{ $json.item_name_dk }}",
+            "item_name_en": "={{ $json.item_name_en }}",
+            "category": "={{ $json.category }}",
+            "price": "={{ $json.price }}",
+            "unit": "={{ $json.unit }}",
+            "store": "={{ $json.store }}",
+            "validFrom": "={{ $('FlattenTheData').item.json.ValidFrom }}",
+            "validTo": "={{ $('FlattenTheData').item.json.ValidTo }}",
+            "publicationID": "={{ $('FlattenTheData').item.json.Publication }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "item_name_dk",
+              "displayName": "item_name_dk",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "item_name_en",
+              "displayName": "item_name_en",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "category",
+              "displayName": "category",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "price",
+              "displayName": "price",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "unit",
+              "displayName": "unit",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "store",
+              "displayName": "store",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "validFrom",
+              "displayName": "validFrom",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "validTo",
+              "displayName": "validTo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "publicationID",
+              "displayName": "publicationID",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ID",
+              "displayName": "ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        1248,
+        544
+      ],
+      "id": "4a1f10f4-d519-4570-8c2e-c5cade629af6",
+      "name": "Insert rows in a table",
+      "credentials": {
+        "postgres": {
+          "id": "Srm6bgSrhPk48xzQ",
+          "name": "DanishGrocery"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        896,
+        144
+      ],
+      "id": "bf77c4f0-8ad0-47c2-a0ba-9996f970f65d",
+      "name": "LoopOverStores",
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "jsCode": "// Add this code node between ExtractStores and LoopOverStores\nconst stores = $input.first().json.data.stores;\nreturn stores.map(s => ({ json: { store: s.store } }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        144
+      ],
+      "id": "51b9eb7e-2dcb-4b8e-8377-a4179d6273f1",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "imageUrl",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        2688,
+        144
+      ],
+      "id": "7aad1c57-fdcc-4f42-9191-236a34c80ca6",
+      "name": "SplitURLs"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "nrAPN6b6WbyGaNzo",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/nrAPN6b6WbyGaNzo",
+          "cachedResultName": "GroceryHarvestor_V2.0"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "imageURL": "={{ $json.imageUrl }}",
+            "Publication": "={{ $('RetrievePublicationID').item.json.publicationId }}",
+            "ValidFrom": "={{ $('RetrievePublicationID').item.json.validFrom }}",
+            "ValidTo": "={{ $('RetrievePublicationID').item.json.validUntil }}",
+            "Store": "={{ $('LoopOverStores').item.json.store }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "imageURL",
+              "displayName": "imageURL",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "Store",
+              "displayName": "Store",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "Publication",
+              "displayName": "Publication",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "ValidFrom",
+              "displayName": "ValidFrom",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "ValidTo",
+              "displayName": "ValidTo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "mode": "each",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        2912,
+        224
+      ],
+      "id": "204572f5-c7d2-4af0-acfa-e4dd3ab5f2aa",
+      "name": "CallAISubFlow"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:3000/api/sendText",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Api-Key",
+              "value": "MySecretKey123"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"session\": \"Abhinay-66111\",\n  \"chatId\": \"919573766111@c.us\",\n  \"text\": \"The Flyer data has been succesfully imported into PostGre DB and updated\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1120,
+        -48
+      ],
+      "id": "329396f8-fe04-42ed-85f9-b6a3faa58d47",
+      "name": "SendWhatsAppMessage",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "model": "gemma3:4b",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmOllama",
+      "typeVersion": 1,
+      "position": [
+        16,
+        880
+      ],
+      "id": "119307a2-612b-4e2d-be74-49745a28792f",
+      "name": "Ollama Model",
+      "credentials": {
+        "ollamaApi": {
+          "id": "L233zqcrVsPy7AQZ",
+          "name": "LocalOllama"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COUNT(*) AS PublicationIDPresence \nFROM \"GroceryDeals_Latest\" \nWHERE store = '{{ $('LoopOverStores').item.json.store }}' \n  AND \"publicationID\" = '{{ $json.publicationId }}' limit 1;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        1568,
+        144
+      ],
+      "id": "9f747abd-a201-436a-80f3-8f6aa9b6be69",
+      "name": "CheckPublicationID",
+      "credentials": {
+        "postgres": {
+          "id": "Srm6bgSrhPk48xzQ",
+          "name": "DanishGrocery"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "b5f6cd72-0738-4c85-9e4e-ca40772570ae",
+              "leftValue": "={{ $json.publicationidpresence.toNumber() }}",
+              "rightValue": 1,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1792,
+        144
+      ],
+      "id": "2094d904-9bdf-46e9-9a8f-fead9bae0909",
+      "name": "IF_PublicationID_Present"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH deleted_rows AS (\n    DELETE FROM \"GroceryDeals_Latest\" \n    WHERE store = '{{ $('LoopOverStores').item.json.store }}' and \"publicationID\" = '{{ $('RetrievePublicationID').item.json.publicationId }}'\n    RETURNING *\n)\nINSERT INTO \"GroceryDeals_Archive\" \nSELECT * FROM deleted_rows;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        2016,
+        144
+      ],
+      "id": "ecbafa25-b82d-4d50-9837-1d7876ac9edf",
+      "name": "DeleteOldStoreData",
+      "credentials": {
+        "postgres": {
+          "id": "Srm6bgSrhPk48xzQ",
+          "name": "DanishGrocery"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "imageURL"
+            },
+            {
+              "name": "Store"
+            },
+            {
+              "name": "Publication"
+            },
+            {
+              "name": "ValidFrom"
+            },
+            {
+              "name": "ValidTo"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        544
+      ],
+      "id": "a0d2646b-710d-4110-ad23-7fbe15b1a632",
+      "name": "FlattenTheData"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.5-flash-lite",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        528,
+        784
+      ],
+      "id": "f0fa3c2e-33e5-47f4-b65e-ded9c65f9727",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "oHzaVfl0hP8LYrAd",
+          "name": "AIGroceryAgent"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "GroceryTrigger": {
+      "main": [
+        [
+          {
+            "node": "ReadStores",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ReadStores": {
+      "main": [
+        [
+          {
+            "node": "ExtractStores",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ExtractStores": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "FetchPublicationID": {
+      "main": [
+        [
+          {
+            "node": "RetrievePublicationID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RetrievePublicationID": {
+      "main": [
+        [
+          {
+            "node": "CheckPublicationID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "FetchFlyers": {
+      "main": [
+        [
+          {
+            "node": "ExtractImageURLs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ExtractImageURLs": {
+      "main": [
+        [
+          {
+            "node": "SplitURLs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "FetchImages": {
+      "main": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Basic LLM Chain": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "FlattenGroceryItems",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "FlattenGroceryItems": {
+      "main": [
+        [
+          {
+            "node": "Insert rows in a table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert rows in a table": {
+      "main": [
+        []
+      ]
+    },
+    "LoopOverStores": {
+      "main": [
+        [
+          {
+            "node": "SendWhatsAppMessage",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "FetchPublicationID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "LoopOverStores",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SplitURLs": {
+      "main": [
+        [
+          {
+            "node": "CallAISubFlow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CallAISubFlow": {
+      "main": [
+        [
+          {
+            "node": "LoopOverStores",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Model": {
+      "ai_languageModel": [
+        []
+      ]
+    },
+    "CheckPublicationID": {
+      "main": [
+        [
+          {
+            "node": "IF_PublicationID_Present",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF_PublicationID_Present": {
+      "main": [
+        [
+          {
+            "node": "LoopOverStores",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "DeleteOldStoreData",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DeleteOldStoreData": {
+      "main": [
+        [
+          {
+            "node": "FetchFlyers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "FlattenTheData": {
+      "main": [
+        [
+          {
+            "node": "FetchImages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "errorWorkflow": "vD7HNSlqYwghiYpq",
+    "timezone": "Europe/Copenhagen",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "e3489383-1a2f-47dd-96c2-5c1f5f55760f",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "3b18695fcd6149970cc5de83a491b540847c1f57327a4b26b957f20d8b3b8878"
+  },
+  "nodeGroups": [],
+  "id": "nrAPN6b6WbyGaNzo",
+  "tags": []
+}

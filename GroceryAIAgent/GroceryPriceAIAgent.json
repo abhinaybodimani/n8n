@@ -1,0 +1,526 @@
+{
+  "name": "GroceryPriceAIAgent",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "4c5cf520-27bc-438a-98a6-2fa9a9a73c31",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        16
+      ],
+      "id": "d9c211bc-1303-4a01-aac8-3bbe33ab756a",
+      "name": "GetMessage",
+      "webhookId": "4c5cf520-27bc-438a-98a6-2fa9a9a73c31"
+    },
+    {
+      "parameters": {
+        "resource": "Chatting",
+        "operation": "Send Text",
+        "session": "={{ $('GetMessage').item.json.body.session}}",
+        "chatId": "={{ $('GetMessage').item.json.body.payload.from}}",
+        "text": "=Hej! Welcome to AIGroceryAgent! 🛒✨\n\nI help across Denmark to track down the best promotional deals at local supermarkets like Netto 🟡 and REMA-1000 🔵 Lidl and Fotex (more stores joining soon! 🚀).\n\n📝 Send me your shopping list or whatever you're craving:\n🥩 Meat & Poultry • 🥦 Veggies • 🍎 Fruits • 🥛 Dairy & Skyr • 🥣 Oats & Staples • 🥤 Sodas • 🍺 Beer & Wine\n\n...and I’ll recommend the lowest prices among all the stores.! 🔍⚡\n\n🗓️✨ Quick tip: Fresh weekly flyer deals drop every Sunday morning! 🎯🇩🇰",
+        "requestOptions": {}
+      },
+      "type": "@devlikeapro/n8n-nodes-waha.WAHA",
+      "typeVersion": 202502,
+      "position": [
+        800,
+        16
+      ],
+      "id": "f39b28d1-666f-491d-bc28-4cdbc2dd6bdf",
+      "name": "SendGreeting",
+      "credentials": {
+        "wahaApi": {
+          "id": "0sNbvFAqVG3YTQG9",
+          "name": "WAHA account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Executes a SQL SELECT query against GroceryDeals_Latest to find deals.",
+        "operation": "executeQuery",
+        "query": "{{ $fromAI('query', 'The SQL SELECT query string to execute') }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.7,
+      "position": [
+        944,
+        544
+      ],
+      "id": "bfdacd79-e833-4c08-bcb7-358e25f2b26e",
+      "name": "FetchDeals",
+      "credentials": {
+        "postgres": {
+          "id": "Srm6bgSrhPk48xzQ",
+          "name": "DanishGrocery"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('GetMessage').item.json.body.payload._data.body.trim().toLowerCase() }}",
+                    "rightValue": "\\b^(thanks|thank you|thx|tak)$\\b",
+                    "operator": {
+                      "type": "string",
+                      "operation": "regex"
+                    },
+                    "id": "880b9c1c-5d55-4aac-9a6a-7bea1cb4be28"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "9705ddc7-d7f4-4fd8-8f10-ed43c41a92c0",
+                    "leftValue": "={{ $('GetMessage').item.json.body.payload._data.body.trim().toLowerCase() }}",
+                    "rightValue": "\\b^(hi|hey|hello|hej|yo)$\\b",
+                    "operator": {
+                      "type": "string",
+                      "operation": "regex"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        448,
+        0
+      ],
+      "id": "80c8087b-68db-4118-b87c-54aed7e9a8f8",
+      "name": "IsGreeting"
+    },
+    {
+      "parameters": {
+        "resource": "Chatting",
+        "operation": "Send Text",
+        "session": "={{ $('GetMessage').item.json.body.session}}",
+        "chatId": "={{ $('GetMessage').item.json.body.payload.from}}",
+        "text": "=You're welcome! Message me your list anytime to check the latest deals! 😊",
+        "requestOptions": {}
+      },
+      "type": "@devlikeapro/n8n-nodes-waha.WAHA",
+      "typeVersion": 202502,
+      "position": [
+        800,
+        -176
+      ],
+      "id": "7bb29fec-63ef-4a18-b791-0c300ecea8d0",
+      "name": "SendThanks",
+      "credentials": {
+        "wahaApi": {
+          "id": "0sNbvFAqVG3YTQG9",
+          "name": "WAHA account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "b6616075-dafb-4e2b-a621-b97373c79e12",
+              "leftValue": "={{ $json.body.payload.fromMe }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "bfe73a76-9ce8-4284-aaf4-ffd4ca0b786c",
+              "leftValue": "",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        224,
+        16
+      ],
+      "id": "905ac0df-e44b-4538-93a4-7f712e726616",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "960746d2-30c0-4bf3-b4cb-47a55c53e24c",
+              "leftValue": "={{ $json.error }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1136,
+        320
+      ],
+      "id": "9b70410f-5130-490c-8207-d53b1824e9ac",
+      "name": "CheckError"
+    },
+    {
+      "parameters": {
+        "resource": "Chatting",
+        "operation": "Send Text",
+        "session": "={{ $('GetMessage').first().json.body.session}}",
+        "chatId": "={{ $('GetMessage').first().json.body.payload.from}}",
+        "text": "=⚠️ Service Notice: Sorry, we encountered an issue processing your request right now. Please try again a little later!🛒🇩🇰",
+        "requestOptions": {}
+      },
+      "type": "@devlikeapro/n8n-nodes-waha.WAHA",
+      "typeVersion": 202502,
+      "position": [
+        1360,
+        224
+      ],
+      "id": "46d88fcb-6015-4a37-a4b6-5ab6e53c5967",
+      "name": "SendErrorMessage",
+      "credentials": {
+        "wahaApi": {
+          "id": "0sNbvFAqVG3YTQG9",
+          "name": "WAHA account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "Chatting",
+        "operation": "Send Text",
+        "session": "={{ $('GetMessage').first().json.body.session}}",
+        "chatId": "={{ $('GetMessage').first().json.body.payload.from}}",
+        "text": "={{ $('AI Grocery Agent').first().json.output }}",
+        "requestOptions": {}
+      },
+      "type": "@devlikeapro/n8n-nodes-waha.WAHA",
+      "typeVersion": 202502,
+      "position": [
+        1360,
+        416
+      ],
+      "id": "9326af0a-363c-48d4-b414-669572db6b91",
+      "name": "SendSuccessMessage'",
+      "credentials": {
+        "wahaApi": {
+          "id": "0sNbvFAqVG3YTQG9",
+          "name": "WAHA account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.5-flash-lite",
+        "options": {
+          "maxOutputTokens": 2048
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        688,
+        544
+      ],
+      "id": "a5c1ac5e-6d86-44d7-a545-a7c6eedf0d96",
+      "name": "3.5FlashLite",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "oHzaVfl0hP8LYrAd",
+          "name": "AIGroceryAgent"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('GetMessage').first().json.body.payload.from }}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.4,
+      "position": [
+        816,
+        544
+      ],
+      "id": "e25f0593-2b0d-4e2e-9271-2349d1fbbc62",
+      "name": "SimpleMemory"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $('GetMessage').first().json.body.payload._data.body }}",
+        "options": {
+          "systemMessage": "ROLE & PURPOSE\nYou are \"AIGroceryAgent\", a WhatsApp grocery and beverage shopping assistant for expats living in Denmark.\nYour job is to take a user's shopping list, query the database for promotional prices across Danish supermarkets (Netto, REMA 1000, Lidl, Føtex), compare the offers, and format a clean, mobile-friendly recommendation.\n\nEXECUTION WORKFLOW\nWhen a user sends a message, follow these steps in order:\n\nIdentify Items & Preferences: Extract grocery items, beverages, or generic store queries. Note whether the user explicitly requested frozen products.\n\nTranslate: Translate English items into common Danish terms (e.g., milk -> mælk, beef -> oksekød, beer -> øl, oats -> havregryn, chicken -> kylling).\n\nQuery Database: Execute the FetchDeals tool using the strict SQL rules below.\n\nConsolidate & Format: Filter the returned rows to highlight the best offers across stores and present the results following the WhatsApp Output Formatting rules.\n\nDATABASE & SQL RULES (CRITICAL)\nFollow these rules strictly when querying GroceryDeals_Latest:\n\nFrozen Exclusion (Default): Unless the user explicitly uses words like \"frozen\", \"frost\", or asks for frozen food, ALWAYS exclude frozen items by appending AND category != 'Frozen' and avoiding '%frost%' terms in your query. Only query the \"Frozen\" category if the user explicitly requested it.\n\nCombined Queries: Never execute more than 2 tool calls per user message. If the user asks for multiple items (e.g., \"chicken and eggs\"), combine them using OR logic into a single SQL query.\n\nSearch Pattern: Use case-insensitive partial matching across both name columns:\n\nWHERE ((item_name_en ILIKE '%term%' OR item_name_dk ILIKE '%term%') AND category != 'Frozen')\n\nExpand & Sort: Always append ORDER BY price ASC LIMIT 60 to your queries to retrieve an adequate sample across all participating stores.\n\nStore Name Normalization: If a specific store is requested, normalize store names to:\n\nFøtex: (store ILIKE '%Føtex%' OR store ILIKE '%fotex%')\n\nREMA 1000: store ILIKE '%REMA%'\n\nNetto: store ILIKE '%Netto%'\n\nLidl: store ILIKE '%Lidl%'\n\nBroad Store Queries: If the user asks a generic question (e.g., \"What deals are in Netto?\") without naming an item:\n\nSQL\nSELECT category, item_name_en, price, unit \nFROM \"GroceryDeals_Latest\" \nWHERE store ILIKE '%<NormalizedStore>%' \n  AND category != 'Frozen' \nORDER BY price ASC \nLIMIT 20;\nNo Retries: If a query returns 0 rows, do not loop or retry alternate queries. Directly report that the item has no active deals.\n\nAI CONSOLIDATION & FILTERING RULES\n\nConsolidate Results: Do not dump all returned database rows into WhatsApp. Parse and group the returned data internally.\n\nStore Diversity: For each requested item, select and display only the top 1 to 2 cheapest options per store (Netto, REMA 1000, Lidl, Føtex) so the user gets an uncluttered, balanced overview across supermarkets.\n\nWHATSAPP OUTPUT FORMATTING\nDo not use Markdown headers (#, ##, or ###). Format strictly for mobile readability:\n\nPrepend an appropriate emoji to each requested product name.\n\nGroup results by item, showing each store deal on its own line:\n[Emoji] [Item Name]:\n\n[Store]: [Price] DKK ([Weight/Unit])\n\n[Store]: [Price] DKK ([Weight/Unit])\n\nIf an item has no promotions found, write:\n\n• [Item Name]: No active promotions this week.\n\nAdd the recommendation block at the bottom:\n🏆 Best Pick:\n\nState the single best-value or lowest unit-price option per item.\n\nProvide a 1-sentence takeaway advising which single supermarket provides the most total savings for the submitted list.",
+          "maxIterations": 5
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        736,
+        320
+      ],
+      "id": "07921e63-e835-4614-a8e0-2cbb3facacb9",
+      "name": "AI Grocery Agent",
+      "retryOnFail": true,
+      "waitBetweenTries": 5000,
+      "notesInFlow": false,
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "pinData": {
+    "GetMessage": [
+      {
+        "json": {
+          "headers": {
+            "accept": "application/json, text/plain, */*",
+            "content-type": "application/json",
+            "user-agent": "WAHA/2026.8.1",
+            "x-webhook-request-id": "4zx1cmtwqrduc",
+            "x-webhook-timestamp": "1789118163155",
+            "content-length": "517",
+            "accept-encoding": "gzip, compress, deflate, br",
+            "host": "host.docker.internal:5678",
+            "connection": "keep-alive"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "id": "evt_01m27w1a6kdcjdv32y3vxbrvbb",
+            "timestamp": 1789118163155,
+            "event": "session.status",
+            "session": "Denmark_9969",
+            "metadata": {},
+            "me": null,
+            "payload": {
+              "name": "Denmark_9969",
+              "status": "WORKING",
+              "fromMe": false,
+              "statuses": [
+                {
+                  "status": "FAILED",
+                  "timestamp": 1789118127423
+                },
+                {
+                  "status": "STARTING",
+                  "timestamp": 1789118128353
+                },
+                {
+                  "status": "WORKING",
+                  "timestamp": 1789118163154
+                }
+              ],
+              "_data": {
+                "body": "Hi"
+              }
+            },
+            "engine": "WEBJS",
+            "environment": {
+              "version": "2026.8.1",
+              "engine": "WEBJS",
+              "tier": "CORE",
+              "browser": "/usr/bin/chromium",
+              "platform": "linux/x64",
+              "worker": {
+                "id": null
+              }
+            }
+          },
+          "webhookUrl": "http://host.docker.internal:5678/webhook/4c5cf520-27bc-438a-98a6-2fa9a9a73c31",
+          "executionMode": "production"
+        }
+      }
+    ]
+  },
+  "connections": {
+    "GetMessage": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "FetchDeals": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Grocery Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IsGreeting": {
+      "main": [
+        [
+          {
+            "node": "SendThanks",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "SendGreeting",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI Grocery Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "IsGreeting",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CheckError": {
+      "main": [
+        [
+          {
+            "node": "SendErrorMessage",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "SendSuccessMessage'",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3.5FlashLite": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Grocery Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SimpleMemory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Grocery Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Grocery Agent": {
+      "main": [
+        [
+          {
+            "node": "CheckError",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "64a78f96-1dd5-4061-8e98-59561e547941",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "3b18695fcd6149970cc5de83a491b540847c1f57327a4b26b957f20d8b3b8878"
+  },
+  "nodeGroups": [],
+  "id": "oJ6RbXtMk92itq7W",
+  "tags": []
+}
